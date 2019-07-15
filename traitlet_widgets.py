@@ -115,7 +115,6 @@ def unregister_trait_view_factory(*trait_types: Type[traitlets.TraitType]):
     """Unregister a view factory for a given traitlet type(s)
 
     :param trait_types: trait class(es) to unregister
-    :param view_factory: view factory for trait class(es)
     :return:
     """
     for trait_type in trait_types:
@@ -169,17 +168,17 @@ def _unicode_view_factory(trait: traitlets.TraitType, ctx: RenderContext):
 
 
 @trait_view_factory(traitlets.Enum)
-def _enum_view_factory(trait: traitlets.TraitType, ctx: RenderContext):
+def _enum_view_factory(trait: traitlets.Enum, ctx: RenderContext):
     return widgets.Dropdown(options=sorted(trait.values))
 
 
 @trait_view_factory(traitlets.Bool)
-def _bool_view_factory(trait: traitlets.TraitType, ctx: RenderContext):
+def _bool_view_factory(trait: traitlets.Bool, ctx: RenderContext):
     return widgets.Checkbox(indent=True)
 
 
 @trait_view_factory(traitlets.Float)
-def _float_view_factory(trait: traitlets.TraitType, ctx: RenderContext):
+def _float_view_factory(trait: traitlets.Float, ctx: RenderContext):
     if not (math.isfinite(trait.min) or math.isfinite(trait.max)):
         return widgets.FloatText()
     if math.isfinite(trait.min) and math.isfinite(trait.max):
@@ -188,7 +187,7 @@ def _float_view_factory(trait: traitlets.TraitType, ctx: RenderContext):
 
 
 @trait_view_factory(traitlets.Integer)
-def _integer_view_factory(trait: traitlets.TraitType, ctx: RenderContext):
+def _integer_view_factory(trait: traitlets.Integer, ctx: RenderContext):
     if trait.min is None and trait.max is None:
         return widgets.IntText()
     elif not (trait.min is None or trait.max is None):
