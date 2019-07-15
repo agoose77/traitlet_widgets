@@ -45,6 +45,28 @@ def model_observer(model: HasTraits, func: ObserverType = None) -> ObserverType:
     return wrapper(func)
 
 
+def model_view(
+    model: HasTraits,
+    show_private_traits: bool = False,
+    label_formatter: Callable[[str], str] = None,
+    logger: Logger = None,
+) -> widgets.VBox:
+    """Generate a view for a model
+
+    :param model: observable (`.observe`) model
+    :param show_private_traits: show/hide traits prefixed with "_"
+    :param label_formatter: function to format labels
+    :param logger: logger to use
+    :return:
+    """
+    ctx = RenderContext(
+        show_private_traits=show_private_traits,
+        label_formatter=label_formatter,
+        logger=logger,
+    )
+    return _has_traits_view_factory(model, ctx)
+
+
 @dataclass
 class RenderContext:
     show_private_traits: bool
@@ -74,28 +96,6 @@ def create_trait_view(trait: traitlets.TraitType, ctx: RenderContext) -> widgets
     """
     factory = _get_trait_view_factory(type(trait))
     return factory(trait, ctx)
-
-
-def model_view(
-    model: HasTraits,
-    show_private_traits: bool = False,
-    label_formatter: Callable[[str], str] = None,
-    logger: Logger = None,
-) -> widgets.VBox:
-    """Generate a view for a model
-
-    :param model: observable (`.observe`) model
-    :param show_private_traits: show/hide traits prefixed with "_"
-    :param label_formatter: function to format labels
-    :param logger: logger to use
-    :return:
-    """
-    ctx = RenderContext(
-        show_private_traits=show_private_traits,
-        label_formatter=label_formatter,
-        logger=logger,
-    )
-    return _has_traits_view_factory(model, ctx)
 
 
 def register_trait_view_factory(
