@@ -4,6 +4,8 @@ version = "0.1.2"
 description = "A library which provides the ability to create widget views for traitlet `HasTraits` models, and also to observe changes in a model"
 authors = ["Angus Hollands <goosey15@gmail.com>"]
 license = "MIT"
+repository = "3xr8TwZyQejE6tS"
+keywords = ["traitlets", "ui", "widgets", "jupyter", "mvc"]
 
 [tool.poetry.dependencies]
 python = "^3.7"
