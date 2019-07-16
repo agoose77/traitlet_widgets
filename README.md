@@ -11,12 +11,14 @@ from traitlet_widgets import model_view
 class Model(HasTraits):
     name = Unicode()
     age = Integer(min=0)
-   
-model = Model()
 
 # Output widget:
-model_view(model)
+view = model_view(Model)
+model = Model()
+view.value = model
 ```
+![Screenshot of result of `model_view`](images/model_view.png)
+
 ### Model observer
 ```python
 from traitlets import HasTraits, Integer, Unicode
