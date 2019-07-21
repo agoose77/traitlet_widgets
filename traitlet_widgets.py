@@ -1,13 +1,15 @@
 import math
-from dataclasses import dataclass
-from logging import Logger
-from typing import Callable, Type, Dict, Any, Union
+import dataclasses
+from logging import Logger, getLogger
+from typing import Callable, Type, Dict, Any, Union, Set, Tuple
 
 import ipywidgets as widgets
 import traitlets
 from inspect import signature
+from functools import wraps
 
 ObserverType = Callable[..., None]
+root_logger = getLogger(__name__)
 
 
 def model_observer(
@@ -46,27 +48,82 @@ def model_observer(
     return wrapper(func)
 
 
+CanFollowTraitType = Callable[[traitlets.HasTraits, Tuple[str, ...]], bool]
+
+
+def default_can_follow_trait(model, path):
+    return True
+
+
+def is_public_trait(model, path):
+    return not path[-1].startswith("_")
+
+
+def is_own_trait(model, path):
+    return path[-1] in model.class_own_traits()
+
+
+@dataclasses.dataclass
+class RenderContext:
+    namespace: Dict[str, Any]
+    format_label: Callable[[str], str]
+    visited: set
+    logger: Logger
+    path: Tuple[str, ...]
+    can_follow_trait: CanFollowTraitType
+
+    def follow_trait(self, model: traitlets.HasTraits, name: str) -> "RenderContext":
+        new_path = self.path + (name,)
+        if callable(self.can_follow_trait) and not self.can_follow_trait(
+            model, new_path
+        ):
+            raise ValueError
+
+        return dataclasses.replace(self, path=new_path)
+
+
+def logical_and(first, *functions):
+    """Logically combine functions with the same signature using AND"""
+    if not functions:
+        return first
+
+    right = logical_and(*functions)
+
+    @wraps(first)
+    def left(*args, **kwargs):
+        return first(*args, **kwargs) and right(*args, **kwargs)
+
+    return left
+
+
 def model_view(
     model: traitlets.HasTraits,
-    show_private_traits: bool = False,
-    label_formatter: Callable[[str], str] = None,
+    format_label: Callable[[str], str] = None,
     namespace: Dict[str, Any] = None,
-    logger: Logger = None,
-) -> '_ModelWidget':
+    logger: Logger = root_logger,
+    hide_private_traits: bool = True,
+    can_follow_trait: CanFollowTraitType = default_can_follow_trait,
+) -> "_ModelWidget":
     """Generate a view for a model
 
     :param model: observable (`.observe`) model
-    :param show_private_traits: show/hide traits prefixed with "_"
-    :param label_formatter: function to format labels
+    :param format_label: function to format labels
     :param namespace: namespace for lookups
     :param logger: logger to use
+    :param hide_private_traits: show/hide traits prefixed with "_"
+    :param can_follow_trait: condition function to determine whether to follow traits by path
     :return:
     """
+    if hide_private_traits:
+        can_follow_trait = logical_and(can_follow_trait, is_public_trait)
+
     ctx = RenderContext(
-        show_private_traits=show_private_traits,
-        label_formatter=label_formatter,
+        format_label=format_label,
         namespace=namespace or {},
         logger=logger,
+        visited=set(),
+        path=(),
+        can_follow_trait=can_follow_trait,
     )
     view = _type_has_traits_view_factory(type(model), ctx)
     view.value = model
@@ -75,42 +132,43 @@ def model_view(
 
 def model_view_for(
     model_cls: Type[traitlets.HasTraits],
-    show_private_traits: bool = False,
-    label_formatter: Callable[[str], str] = None,
+    format_label: Callable[[str], str] = None,
     namespace: Dict[str, Any] = None,
-    logger: Logger = None,
-) -> '_ModelWidget':
+    logger: Logger = root_logger,
+    hide_private_traits: bool = True,
+    can_follow_trait: CanFollowTraitType = default_can_follow_trait,
+) -> "_ModelWidget":
     """Generate a view for a model
 
     :param model_cls: observable (`.observe`) model class
-    :param show_private_traits: show/hide traits prefixed with "_"
-    :param label_formatter: function to format labels
+    :param format_label: function to format labels
     :param namespace: namespace for lookups
     :param logger: logger to use
+    :param hide_private_traits: show/hide traits prefixed with "_"
+    :param can_follow_trait: condition function to determine whether to follow traits by path
     :return:
     """
+    if hide_private_traits:
+        can_follow_trait = logical_and(can_follow_trait, is_public_trait)
+
     ctx = RenderContext(
-        show_private_traits=show_private_traits,
-        label_formatter=label_formatter,
+        format_label=format_label,
         namespace=namespace or {},
         logger=logger,
+        visited=set(),
+        path=(),
+        can_follow_trait=can_follow_trait,
     )
     return _type_has_traits_view_factory(model_cls, ctx)
-
-
-@dataclass
-class RenderContext:
-    show_private_traits: bool
-    namespace: Dict[str, Any]
-    label_formatter: Callable[[str], str]
-    logger: Logger
 
 
 TraitViewFactoryType = Callable[[traitlets.TraitType, RenderContext], widgets.Widget]
 _trait_view_factories: Dict[Type[traitlets.TraitType], TraitViewFactoryType] = {}
 
 
-def _get_trait_view_factory(trait_type: Type[traitlets.TraitType]):
+def _get_trait_view_factory(
+    trait_type: Type[traitlets.TraitType]
+) -> TraitViewFactoryType:
     for cls in trait_type.__mro__:
         try:
             return _trait_view_factories[cls]
@@ -168,21 +226,25 @@ def trait_view_factory(*trait_types: Type[traitlets.TraitType]):
 
 
 class _ModelWidget(widgets.VBox):
-
-    def __init__(self, widgets_: Dict[str, widgets.Widget], **kwargs):
+    def __init__(self, widgets_: Dict[str, widgets.Widget], logger, **kwargs):
         self.links = []
         self.widgets = widgets_
+        self.logger = logger
         super().__init__(tuple(widgets_.values()), **kwargs)
 
     @classmethod
-    def specialise_for_cls(cls, klass: Union[Type[traitlets.HasTraits], str]) -> Type['_ModelWidget']:
+    def specialise_for_cls(
+        cls, klass: Union[Type[traitlets.HasTraits], str]
+    ) -> Type["_ModelWidget"]:
         """Create a specialised _ModelWidget for a given class
 
         :param klass: `HasTraits` subclass or class name
         :return:
         """
+
         class _ModelWidget(cls):
             value = traitlets.Instance(klass)
+
         return _ModelWidget
 
     @traitlets.observe("value")
@@ -191,32 +253,52 @@ class _ModelWidget(widgets.VBox):
             link.unlink()
 
         model = change["new"]
-        self.links = [widgets.link((model, n), (w, 'value')) for n, w in self.widgets.items()]
+        self.links.clear()
+
+        for n, w in self.widgets.items():
+            try:
+                widgets.link((model, n), (w, "value"))
+            except:
+                if self.logger is not None:
+                    self.logger.exception(f"Error in linking widget {n}")
 
 
-def _type_has_traits_view_factory(has_traits: Type[traitlets.HasTraits], ctx) -> _ModelWidget:
+def _type_has_traits_view_factory(
+    has_traits: Type[traitlets.HasTraits], ctx: RenderContext
+) -> _ModelWidget:
+    if has_traits in ctx.visited:
+        raise ValueError(f"Already visited {has_traits!r}")
+
+    ctx.visited.add(has_traits)
+
     model_widgets = {}
     for name, trait in has_traits.class_traits().items():
-        label = ctx.label_formatter(name) if callable(ctx.label_formatter) else name
-        if name.startswith("_") and not ctx.show_private_traits:
-            continue
-
         # Support externally registered widgets
         try:
-            widget = create_trait_view(trait, ctx)
-        except:
-            if ctx.logger:
-                ctx.logger.exception(
-                    f"Unable to render {name} ({type(trait).__qualname__})"
-                )
+            derived_ctx = ctx.follow_trait(has_traits, name)
+        except ValueError:
+            ctx.logger.info(
+                f"Unable to follow trait {name!r} ({type(trait).__qualname__})"
+            )
             continue
 
-        widget.description = label
+        try:
+            widget = create_trait_view(trait, derived_ctx)
+        except:
+            ctx.logger.exception(
+                f"Unable to render trait {name!r} ({type(trait).__qualname__})"
+            )
+            continue
+
+        ctx.logger.info(f"Folling trait {name!r}")
+        widget.description = (
+            ctx.format_label(name) if callable(ctx.format_label) else name
+        )
         widget.disabled = trait.read_only
         model_widgets[name] = widget
 
     model_widget_class = _ModelWidget.specialise_for_cls(has_traits)
-    return model_widget_class(model_widgets)
+    return model_widget_class(model_widgets, ctx.logger)
 
 
 @trait_view_factory(traitlets.Instance)
