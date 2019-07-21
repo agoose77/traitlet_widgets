@@ -4,6 +4,7 @@
 Examples
 --------
 ### Model view
+#### Create Model
 ```python
 from traitlets import HasTraits, Integer, Unicode
 from traitlet_widgets import model_view
@@ -11,9 +12,18 @@ from traitlet_widgets import model_view
 class Model(HasTraits):
     name = Unicode()
     age = Integer(min=0)
-
+```
+#### View Model
+```python
 # Output widget:
-view = model_view(Model)
+model = Model()
+view = model_view(model)
+view.value = model
+```
+#### Alternative API
+```python
+# Output widget:
+view = model_view_for(Model)
 model = Model()
 view.value = model
 ```
