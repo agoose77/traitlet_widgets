@@ -18,14 +18,14 @@ class Model(HasTraits):
 # Output widget:
 model = Model()
 view = model_view(model)
-view.value = model
+view.model = model
 ```
 #### Alternative API
 ```python
 # Output widget:
 view = model_view_for(Model)
 model = Model()
-view.value = model
+view.model = model
 ```
 ![Screenshot of result of `model_view`](images/model_view.png)
 
