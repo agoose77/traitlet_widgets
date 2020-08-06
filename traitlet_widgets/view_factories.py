@@ -1,5 +1,6 @@
 import dataclasses
 import math
+import types
 from logging import Logger, getLogger
 from typing import Any, Callable, Dict, Iterator, Optional, Type, Tuple, Union
 
@@ -87,20 +88,11 @@ def request_constructor_for_variant(
     return cls, kwargs
 
 
-def create_trait_view(
-    ctx: ViewContext, trait: traitlets.TraitType, variant: Type[widgets.Widget] = None
-) -> widgets.Widget:
-    """Create a view for a trait
-
-    :param ctx: render context
-    :param trait: traitlet instance
-    :param variant: optionally request a widget variant
-    :return:
-    """
+def get_widget_constructor(ctx, trait, variant, metadata):
     factory = _get_trait_view_variant_factory(type(trait))
 
     # Allow library to propose variants
-    supported_variants = list(factory(trait, ctx))
+    supported_variants = list(factory(trait, ctx, {**trait.metadata, **metadata}))
     if not supported_variants:
         raise ValueError(f"No variant found for {trait}")
 
@@ -111,6 +103,25 @@ def create_trait_view(
     else:
         # Find the widget class for this variant, if possible
         cls, kwargs = request_constructor_for_variant(supported_variants, variant)
+
+    valid_attributes = {k: v for k, v in kwargs.items() if hasattr(cls, k)}
+    return cls, valid_attributes
+
+
+def create_trait_view(
+    ctx: ViewContext,
+    trait: traitlets.TraitType,
+    variant: Type[widgets.Widget] = None,
+    metadata: Dict[str, Any] = None,
+) -> widgets.Widget:
+    """Create a view for a trait
+
+    :param ctx: render context
+    :param trait: traitlet instance
+    :param variant: optionally request a widget variant
+    :return:
+    """
+    cls, kwargs = get_widget_constructor(ctx, trait, variant, metadata)
 
     # Create widget
     widget = cls(**kwargs)
@@ -179,9 +190,7 @@ def trait_view_variants(*trait_types: Type[traitlets.TraitType]):
     return wrapper
 
 
-def has_traits_view_factory(
-    has_traits: Type[traitlets.HasTraits], ctx: ViewContext
-) -> HasTraitsViewWidget:
+def create_has_traits_widgets(has_traits: Type[traitlets.HasTraits], ctx: ViewContext):
     if has_traits in ctx.visited:
         raise ValueError(f"Already visited {has_traits!r}")
 
@@ -215,13 +224,19 @@ def has_traits_view_factory(
 
         ctx.logger.info(f"Created widget {widget} for trait {name!r}")
         model_widgets[name] = widget
+    return model_widgets
 
+
+def has_traits_view_factory(has_traits: Type[traitlets.HasTraits], ctx: ViewContext):
+    model_widgets = create_has_traits_widgets(has_traits, ctx)
     model_widget_class = HasTraitsViewWidget.specialise_for_cls(has_traits)
     return model_widget_class(model_widgets, ctx.logger)
 
 
 @trait_view_variants(traitlets.Instance)
-def _instance_view_factory(trait: traitlets.Instance, ctx) -> VariantIterator:
+def _instance_view_factory(
+    trait: traitlets.Instance, ctx, metadata: Dict[str, Any]
+) -> VariantIterator:
     cls = trait.klass
     if isinstance(cls, str):
         cls = ctx.namespace[cls]
@@ -236,42 +251,64 @@ def _instance_view_factory(trait: traitlets.Instance, ctx) -> VariantIterator:
     traitlets.Unicode, traitlets.ObjectName, traitlets.DottedObjectName
 )
 def _unicode_view_factory(
-    trait: traitlets.TraitType, ctx: ViewContext
+    trait: traitlets.TraitType, ctx: ViewContext, metadata: Dict[str, Any]
 ) -> VariantIterator:
-    yield widgets.Text, {}
+    yield widgets.Text, metadata
 
 
 @trait_view_variants(traitlets.Enum)
-def _enum_view_factory(trait: traitlets.Enum, ctx: ViewContext) -> VariantIterator:
-    options = sorted(trait.values)
-    yield widgets.SelectionSlider, {"options": options}
-    yield widgets.Dropdown, {"options": options}
+def _enum_view_factory(
+    trait: traitlets.Enum, ctx: ViewContext, metadata: Dict[str, Any]
+) -> VariantIterator:
+    params = {"options": sorted(trait.values), **metadata}
+
+    yield widgets.SelectionSlider, params
+    yield widgets.Dropdown, params
 
 
 @trait_view_variants(traitlets.Bool)
-def _bool_view_factory(trait: traitlets.Bool, ctx: ViewContext) -> VariantIterator:
-    yield widgets.Checkbox, {"indent": True}
+def _bool_view_factory(
+    trait: traitlets.Bool, ctx: ViewContext, metadata: Dict[str, Any]
+) -> VariantIterator:
+    yield widgets.Checkbox, {"indent": True, **metadata}
 
 
 @trait_view_variants(traitlets.Float)
-def _float_view_factory(trait: traitlets.Float, ctx: ViewContext) -> VariantIterator:
-    if not (math.isfinite(trait.min) or math.isfinite(trait.max)):
-        yield widgets.FloatText
+def _float_view_factory(
+    trait: traitlets.Float, ctx: ViewContext, metadata: Dict[str, Any]
+) -> VariantIterator:
+    # Unbounded variant
+    yield widgets.FloatText, metadata
 
-    yield widgets.BoundedFloatText, {"min": trait.min, "max": trait.max}
+    # Build UI params store
+    params = {"min": trait.min, "max": trait.max, **metadata}
 
-    if math.isfinite(trait.min) and math.isfinite(trait.max):
-        yield widgets.FloatSlider, {"min": trait.min, "max": trait.max}
+    # Require min to be set
+    if params["min"] is not None and math.isfinite(params["min"]):
+        return
+
+    # Require max to be set
+    if params["max"] is not None and math.isfinite(params["max"]):
+        return
+
+    # Bounded variants:
+    yield widgets.BoundedFloatText, params
+    yield widgets.FloatSlider, params
+
+    # Logarithmic bounded variant
+    if params.get("base") is not None:
+        yield widgets.FloatLogSlider, params
 
 
 @trait_view_variants(traitlets.Integer)
 def _integer_view_factory(
-    trait: traitlets.Integer, ctx: ViewContext
+    trait: traitlets.Integer, ctx: ViewContext, metadata: Dict[str, Any]
 ) -> VariantIterator:
-    if trait.min is None and trait.max is None:
-        yield widgets.IntText, {}
+    yield widgets.IntText, {}
 
-    yield widgets.BoundedIntText, {"min": trait.min, "max": trait.max}
+    params = {"min": trait.min, "max": trait.max, **metadata}
+    if params["min"] is None or params["max"] is None:
+        return
 
-    if trait.min is not None and trait.max is not None:
-        yield widgets.IntSlider, {"min": trait.min, "max": trait.max}
+    yield widgets.BoundedIntText, params
+    yield widgets.IntSlider, params
