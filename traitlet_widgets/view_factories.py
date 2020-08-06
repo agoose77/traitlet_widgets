@@ -1,7 +1,7 @@
 import dataclasses
 import math
 from logging import Logger, getLogger
-from typing import Any, Callable, Dict, Type, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, Optional, Type, Tuple, Union
 
 import ipywidgets as widgets
 import traitlets
@@ -14,15 +14,10 @@ logger = getLogger(__name__)
 CanFollowTraitType = Callable[[traitlets.HasTraits, Tuple[str, ...]], bool]
 
 
-VisitorType = Callable[
-    [traitlets.HasTraits, Tuple[str, ...], traitlets.TraitType, widgets.Widget], None
-]
-
-
 @dataclasses.dataclass
 class ViewContext:
     namespace: Dict[str, Any]
-    visitor: VisitorType
+    transformer: "TransformerType"
     visited: set
     logger: Logger
     path: Tuple[str, ...]
@@ -41,13 +36,13 @@ class ViewContext:
 
         return dataclasses.replace(self, path=new_path)
 
-    def visit(
+    def transform_widget(
         self,
         model: traitlets.HasTraits,
         name: str,
         trait: traitlets.TraitType,
         widget: widgets.Widget,
-    ):
+    ) -> Optional[widgets.Widget]:
         """Call the user defined visitor with a given model field
 
         :param model:
@@ -56,32 +51,69 @@ class ViewContext:
         :param widget:
         :return:
         """
-        path = self.resolve_name(name)
-
-        if callable(self.visitor):
-            self.visitor(model, path, trait, widget)
+        if callable(self.transformer):
+            return self.transformer(self, model, name, trait, widget)
 
 
-TraitViewFactoryType = Callable[[traitlets.TraitType, ViewContext], widgets.Widget]
-_trait_view_factories: Dict[Type[traitlets.TraitType], TraitViewFactoryType] = {}
+TransformerType = Callable[
+    [ViewContext, traitlets.HasTraits, str, traitlets.TraitType, widgets.Widget],
+    Optional[widgets.Widget],
+]
+
+VariantIterator = Iterator[Tuple[Type[widgets.Widget], Dict[str, Any]]]
+TraitViewFactoryType = Callable[[traitlets.TraitType, ViewContext], VariantIterator]
+_trait_view_variant_factories: Dict[
+    Type[traitlets.TraitType], TraitViewFactoryType
+] = {}
+
+
+def request_constructor_for_variant(
+    variant_kwarg_pairs, variant: Type[widgets.Widget] = None
+):
+    """Return best widget constructor from a series of candidates. Attempt to satisfy variant.
+
+    :param variant_kwarg_pairs: sequence of (widget_cls, kwarg) pairs
+    :param variant: optional requested variant.
+    :return:
+    """
+    assert variant_kwarg_pairs
+
+    for cls, kwargs in variant_kwarg_pairs:
+        if cls is variant:
+            break
+    else:
+        logger.debug(f"Unable to find variant {variant} in {variant_kwarg_pairs}")
+
+    return cls, kwargs
 
 
 def create_trait_view(
-    trait: traitlets.TraitType, ctx: ViewContext, description: str = None
+    ctx: ViewContext, trait: traitlets.TraitType, variant: Type[widgets.Widget] = None
 ) -> widgets.Widget:
     """Create a view for a trait
 
-    :param trait: traitlet instance
     :param ctx: render context
-    :param description: label description
+    :param trait: traitlet instance
+    :param variant: optionally request a widget variant
     :return:
     """
-    factory = _get_trait_view_factory(type(trait))
-    widget = factory(trait, ctx)
+    factory = _get_trait_view_variant_factory(type(trait))
 
-    # Set description (set by model)
-    if description is not None:
-        widget.description = description
+    # Allow library to propose variants
+    supported_variants = list(factory(trait, ctx))
+    if not supported_variants:
+        raise ValueError(f"No variant found for {trait}")
+
+    # Find variant
+    variant = variant or trait.metadata.get("variant")
+    if variant is None:
+        cls, kwargs = supported_variants[-1]
+    else:
+        # Find the widget class for this variant, if possible
+        cls, kwargs = request_constructor_for_variant(supported_variants, variant)
+
+    # Create widget
+    widget = cls(**kwargs)
 
     # Set any useful values using metadata
     for key, value in trait.metadata.items():
@@ -89,11 +121,12 @@ def create_trait_view(
             logger.debug("Setting {trait} metadata {key} = {value!r} on {widget}")
             setattr(widget, key, value)
 
+    # Set read/write status from trait
     widget.disabled = trait.read_only
     return widget
 
 
-def _get_trait_view_factory(
+def _get_trait_view_variant_factory(
     trait_type: Type[traitlets.TraitType],
 ) -> TraitViewFactoryType:
     """Get a view factory for a given trait class
@@ -103,36 +136,36 @@ def _get_trait_view_factory(
     """
     for cls in trait_type.__mro__:
         try:
-            return _trait_view_factories[cls]
+            return _trait_view_variant_factories[cls]
         except KeyError:
             continue
     raise ValueError(f"Couldn't find factory for {trait_type}")
 
 
-def register_trait_view_factory(
-    *trait_types: Type[traitlets.TraitType], view_factory: TraitViewFactoryType
+def register_trait_view_variant_factory(
+    *trait_types: Type[traitlets.TraitType], variant_factory: TraitViewFactoryType
 ):
     """Register a view factory for a given traitlet type(s)
 
     :param trait_types: trait class(es) to register
-    :param view_factory: view factory for trait class(es)
+    :param variant_factory: view factory for trait class(es)
     :return:
     """
     for trait_type in trait_types:
-        _trait_view_factories[trait_type] = view_factory
+        _trait_view_variant_factories[trait_type] = variant_factory
 
 
-def unregister_trait_view_factory(*trait_types: Type[traitlets.TraitType]):
+def unregister_trait_view_variant_factory(*trait_types: Type[traitlets.TraitType]):
     """Unregister a view factory for a given traitlet type(s)
 
     :param trait_types: trait class(es) to unregister
     :return:
     """
     for trait_type in trait_types:
-        del _trait_view_factories[trait_type]
+        del _trait_view_variant_factories[trait_type]
 
 
-def trait_view_factory(*trait_types: Type[traitlets.TraitType]):
+def trait_view_variants(*trait_types: Type[traitlets.TraitType]):
     """Decorator for  registering view factory functions
 
     :param trait_types: trait class(es) to register
@@ -140,7 +173,7 @@ def trait_view_factory(*trait_types: Type[traitlets.TraitType]):
     """
 
     def wrapper(factory):
-        register_trait_view_factory(*trait_types, view_factory=factory)
+        register_trait_view_variant_factory(*trait_types, variant_factory=factory)
         return factory
 
     return wrapper
@@ -166,26 +199,29 @@ def has_traits_view_factory(
             continue
 
         try:
-            widget = create_trait_view(
-                trait, derived_ctx, description=name.replace("_", " ").title()
-            )
+            widget = create_trait_view(derived_ctx, trait)
         except:
             ctx.logger.exception(
                 f"Unable to render trait {name!r} ({type(trait).__qualname__})"
             )
             continue
 
-        ctx.visit(has_traits, name, trait, widget)
+        # Call user visitor and allow it to replace the widget
+        widget = ctx.transform_widget(has_traits, name, trait, widget) or widget
 
-        ctx.logger.info(f"Folling trait {name!r}")
+        # Set default widget description
+        if not widget.description:
+            widget.description = name.replace("_", " ").title()
+
+        ctx.logger.info(f"Created widget {widget} for trait {name!r}")
         model_widgets[name] = widget
 
     model_widget_class = HasTraitsViewWidget.specialise_for_cls(has_traits)
     return model_widget_class(model_widgets, ctx.logger)
 
 
-@trait_view_factory(traitlets.Instance)
-def _instance_view_factory(trait: traitlets.Instance, ctx) -> HasTraitsViewWidget:
+@trait_view_variants(traitlets.Instance)
+def _instance_view_factory(trait: traitlets.Instance, ctx) -> VariantIterator:
     cls = trait.klass
     if isinstance(cls, str):
         cls = ctx.namespace[cls]
@@ -193,41 +229,49 @@ def _instance_view_factory(trait: traitlets.Instance, ctx) -> HasTraitsViewWidge
     if not issubclass(cls, traitlets.HasTraits):
         raise ValueError("Cannot render a non-traitlet model")
 
-    return has_traits_view_factory(cls, ctx)
+    yield has_traits_view_factory, {"has_traits": cls, "ctx": ctx}
 
 
-@trait_view_factory(traitlets.Unicode, traitlets.ObjectName, traitlets.DottedObjectName)
-def _unicode_view_factory(trait: traitlets.TraitType, ctx: ViewContext) -> widgets.Text:
-    return widgets.Text()
+@trait_view_variants(
+    traitlets.Unicode, traitlets.ObjectName, traitlets.DottedObjectName
+)
+def _unicode_view_factory(
+    trait: traitlets.TraitType, ctx: ViewContext
+) -> VariantIterator:
+    yield widgets.Text, {}
 
 
-@trait_view_factory(traitlets.Enum)
-def _enum_view_factory(trait: traitlets.Enum, ctx: ViewContext) -> widgets.Dropdown:
-    return widgets.Dropdown(options=sorted(trait.values))
+@trait_view_variants(traitlets.Enum)
+def _enum_view_factory(trait: traitlets.Enum, ctx: ViewContext) -> VariantIterator:
+    options = sorted(trait.values)
+    yield widgets.SelectionSlider, {"options": options}
+    yield widgets.Dropdown, {"options": options}
 
 
-@trait_view_factory(traitlets.Bool)
-def _bool_view_factory(trait: traitlets.Bool, ctx: ViewContext) -> widgets.Checkbox:
-    return widgets.Checkbox(indent=True)
+@trait_view_variants(traitlets.Bool)
+def _bool_view_factory(trait: traitlets.Bool, ctx: ViewContext) -> VariantIterator:
+    yield widgets.Checkbox, {"indent": True}
 
 
-@trait_view_factory(traitlets.Float)
-def _float_view_factory(
-    trait: traitlets.Float, ctx: ViewContext
-) -> Union[widgets.FloatText, widgets.FloatSlider, widgets.BoundedFloatText]:
+@trait_view_variants(traitlets.Float)
+def _float_view_factory(trait: traitlets.Float, ctx: ViewContext) -> VariantIterator:
     if not (math.isfinite(trait.min) or math.isfinite(trait.max)):
-        return widgets.FloatText()
+        yield widgets.FloatText
+
+    yield widgets.BoundedFloatText, {"min": trait.min, "max": trait.max}
+
     if math.isfinite(trait.min) and math.isfinite(trait.max):
-        return widgets.FloatSlider(min=trait.min, max=trait.max)
-    return widgets.BoundedFloatText(min=trait.min, max=trait.max)
+        yield widgets.FloatSlider, {"min": trait.min, "max": trait.max}
 
 
-@trait_view_factory(traitlets.Integer)
+@trait_view_variants(traitlets.Integer)
 def _integer_view_factory(
     trait: traitlets.Integer, ctx: ViewContext
-) -> Union[widgets.IntText, widgets.IntSlider, widgets.BoundedIntText]:
+) -> VariantIterator:
     if trait.min is None and trait.max is None:
-        return widgets.IntText()
-    elif not (trait.min is None or trait.max is None):
-        return widgets.IntSlider(min=trait.min, max=trait.max)
-    return widgets.BoundedIntText(min=trait.min, max=trait.max)
+        yield widgets.IntText, {}
+
+    yield widgets.BoundedIntText, {"min": trait.min, "max": trait.max}
+
+    if trait.min is not None and trait.max is not None:
+        yield widgets.IntSlider, {"min": trait.min, "max": trait.max}
