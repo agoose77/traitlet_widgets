@@ -7,7 +7,8 @@ from typing import Any, Callable, Dict, Iterator, Optional, Type, Tuple, Union
 import ipywidgets as widgets
 import traitlets
 
-from .widgets import HasTraitsViewWidget
+from .widgets import ModelViewWidget
+
 
 logger = getLogger(__name__)
 
@@ -62,7 +63,9 @@ TransformerType = Callable[
 ]
 
 VariantIterator = Iterator[Tuple[Type[widgets.Widget], Dict[str, Any]]]
-TraitViewFactoryType = Callable[[traitlets.TraitType, ViewContext], VariantIterator]
+TraitViewFactoryType = Callable[
+    [traitlets.TraitType, ViewContext, Dict[str, Any]], VariantIterator
+]
 _trait_view_variant_factories: Dict[
     Type[traitlets.TraitType], TraitViewFactoryType
 ] = {}
@@ -70,7 +73,7 @@ _trait_view_variant_factories: Dict[
 
 def request_constructor_for_variant(
     variant_kwarg_pairs, variant: Type[widgets.Widget] = None
-):
+) -> Tuple[Any, Dict[str, Any]]:
     """Return best widget constructor from a series of candidates. Attempt to satisfy variant.
 
     :param variant_kwarg_pairs: sequence of (widget_cls, kwarg) pairs
@@ -88,11 +91,24 @@ def request_constructor_for_variant(
     return cls, kwargs
 
 
-def get_widget_constructor(ctx, trait, variant, metadata):
-    factory = _get_trait_view_variant_factory(type(trait))
+def create_best_widget(
+    ctx: ViewContext, trait: traitlets.TraitType, variant, metadata: Dict[str, Any]
+):
+    """Return the best view constructor for a given trait
+
+    :param ctx:
+    :param trait:
+    :param variant:
+    :param metadata:
+    :return:
+    """
+    factory = get_trait_view_variant_factory(type(trait))
+
+    # Allow model or caller to set view metadata
+    view_metadata = {**trait.metadata, **metadata}
 
     # Allow library to propose variants
-    supported_variants = list(factory(trait, ctx, {**trait.metadata, **metadata}))
+    supported_variants = list(factory(trait, ctx, view_metadata))
     if not supported_variants:
         raise ValueError(f"No variant found for {trait}")
 
@@ -104,8 +120,13 @@ def get_widget_constructor(ctx, trait, variant, metadata):
         # Find the widget class for this variant, if possible
         cls, kwargs = request_constructor_for_variant(supported_variants, variant)
 
-    valid_attributes = {k: v for k, v in kwargs.items() if hasattr(cls, k)}
-    return cls, valid_attributes
+    # Traitlets cannot receive additional arguments.
+    # Use factories should handle these themselves
+    if issubclass(cls, traitlets.HasTraits):
+        trait_names = set(cls.class_trait_names())
+        kwargs = {k: v for k, v in kwargs.items() if k in trait_names}
+
+    return cls(**kwargs)
 
 
 def create_trait_view(
@@ -119,12 +140,10 @@ def create_trait_view(
     :param ctx: render context
     :param trait: traitlet instance
     :param variant: optionally request a widget variant
+    :param metadata: view metadata
     :return:
     """
-    cls, kwargs = get_widget_constructor(ctx, trait, variant, metadata)
-
-    # Create widget
-    widget = cls(**kwargs)
+    widget = create_best_widget(ctx, trait, variant, metadata or {})
 
     # Set any useful values using metadata
     for key, value in trait.metadata.items():
@@ -137,7 +156,7 @@ def create_trait_view(
     return widget
 
 
-def _get_trait_view_variant_factory(
+def get_trait_view_variant_factory(
     trait_type: Type[traitlets.TraitType],
 ) -> TraitViewFactoryType:
     """Get a view factory for a given trait class
@@ -190,17 +209,19 @@ def trait_view_variants(*trait_types: Type[traitlets.TraitType]):
     return wrapper
 
 
-def create_has_traits_widgets(has_traits: Type[traitlets.HasTraits], ctx: ViewContext):
-    if has_traits in ctx.visited:
-        raise ValueError(f"Already visited {has_traits!r}")
+def create_widgets_for_model_cls(
+    model_cls: Type[traitlets.HasTraits], ctx: ViewContext
+):
+    if model_cls in ctx.visited:
+        raise ValueError(f"Already visited {model_cls!r}")
 
-    ctx.visited.add(has_traits)
+    ctx.visited.add(model_cls)
 
     model_widgets = {}
-    for name, trait in has_traits.class_traits().items():
+    for name, trait in model_cls.class_traits().items():
         # Support externally registered widgets
         try:
-            derived_ctx = ctx.follow_trait(has_traits, name)
+            derived_ctx = ctx.follow_trait(model_cls, name)
         except ValueError:
             ctx.logger.info(
                 f"Unable to follow trait {name!r} ({type(trait).__qualname__})"
@@ -216,7 +237,7 @@ def create_has_traits_widgets(has_traits: Type[traitlets.HasTraits], ctx: ViewCo
             continue
 
         # Call user visitor and allow it to replace the widget
-        widget = ctx.transform_widget(has_traits, name, trait, widget) or widget
+        widget = ctx.transform_widget(model_cls, name, trait, widget) or widget
 
         # Set default widget description
         if not widget.description:
@@ -227,9 +248,11 @@ def create_has_traits_widgets(has_traits: Type[traitlets.HasTraits], ctx: ViewCo
     return model_widgets
 
 
-def has_traits_view_factory(has_traits: Type[traitlets.HasTraits], ctx: ViewContext):
-    model_widgets = create_has_traits_widgets(has_traits, ctx)
-    model_widget_class = HasTraitsViewWidget.specialise_for_cls(has_traits)
+def has_traits_view_factory(
+    model_cls: Type[traitlets.HasTraits], ctx: ViewContext
+) -> ModelViewWidget:
+    model_widgets = create_widgets_for_model_cls(model_cls, ctx)
+    model_widget_class = ModelViewWidget.specialise_for_cls(model_cls)
     return model_widget_class(model_widgets, ctx.logger)
 
 
@@ -237,14 +260,15 @@ def has_traits_view_factory(has_traits: Type[traitlets.HasTraits], ctx: ViewCont
 def _instance_view_factory(
     trait: traitlets.Instance, ctx, metadata: Dict[str, Any]
 ) -> VariantIterator:
-    cls = trait.klass
-    if isinstance(cls, str):
-        cls = ctx.namespace[cls]
+    model_cls = trait.klass
+    if isinstance(model_cls, str):
+        model_cls = ctx.namespace[model_cls]
 
-    if not issubclass(cls, traitlets.HasTraits):
+    if not issubclass(model_cls, traitlets.HasTraits):
         raise ValueError("Cannot render a non-traitlet model")
 
-    yield has_traits_view_factory, {"has_traits": cls, "ctx": ctx}
+    model_view_cls = ModelViewWidget.specialise_for_cls(model_cls)
+    yield model_view_cls, {"ctx": ctx, **metadata}
 
 
 @trait_view_variants(
@@ -304,7 +328,7 @@ def _float_view_factory(
 def _integer_view_factory(
     trait: traitlets.Integer, ctx: ViewContext, metadata: Dict[str, Any]
 ) -> VariantIterator:
-    yield widgets.IntText, {}
+    yield widgets.IntText, metadata
 
     params = {"min": trait.min, "max": trait.max, **metadata}
     if params["min"] is None or params["max"] is None:

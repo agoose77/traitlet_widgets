@@ -4,40 +4,52 @@ import ipywidgets as widgets
 import traitlets
 
 
-class HasTraitsViewWidget(widgets.VBox):
+class ModelViewWidget(widgets.HBox):
     """Widget to render a view over a a model"""
 
-    model = traitlets.Instance(object)
+    value = traitlets.Instance(object)
+    ctx = traitlets.Instance(object)
+    description = traitlets.Unicode()
 
-    def __init__(self, widgets_: Dict[str, widgets.Widget], logger, **kwargs):
-        self.links = []
-        self.widgets = widgets_
-        self.logger = logger
-        super().__init__(tuple(widgets_.values()), **kwargs)
+    def __init__(self, ctx, **kwargs):
+        self.description_widget = widgets.Label()
+        widgets.link((self.description_widget, 'value'), (self, 'description'))
+
+        self._links = []
+        self._logger = ctx.logger
+
+        from .view_factories import create_widgets_for_model_cls
+        model_widgets = create_widgets_for_model_cls(type(self).value.klass, ctx)
+
+        if "value" in model_widgets:
+            raise ValueError("Trait name 'value' not permitted in model")
+
+        self.widgets = model_widgets
+        super().__init__(children=[self.description_widget, widgets.VBox(list(model_widgets.values()))], **kwargs)
 
     @classmethod
     def specialise_for_cls(
         cls, klass: Union[Type[traitlets.HasTraits], str]
-    ) -> Type["HasTraitsViewWidget"]:
+    ) -> Type["ModelViewWidget"]:
         """Create a specialised _ModelWidget for a given class
 
         :param klass: `HasTraits` subclass or class name
         :return:
         """
         klass_name = getattr(klass, "__name__", klass)
-        return type(f"{klass_name}View", (cls,), {"model": traitlets.Instance(klass)})
+        return type(f"{klass_name}View", (cls,), {"value": traitlets.Instance(klass)})
 
-    @traitlets.observe("model")
-    def _value_changed(self, change):
-        for link in self.links:
+    @traitlets.observe("value")
+    def _model_changed(self, change):
+        for link in self._links:
             link.unlink()
+        self._links.clear()
 
         model = change["new"]
-        self.links.clear()
-
         for n, w in self.widgets.items():
             try:
-                widgets.link((model, n), (w, "value"))
+                self._links.append(widgets.link((model, n), (w, "value")))
             except:
-                if self.logger is not None:
-                    self.logger.exception(f"Error in linking widget {n}")
+                if self._logger is not None:
+                    self._logger.exception(f"Error in linking widget {n}")
+

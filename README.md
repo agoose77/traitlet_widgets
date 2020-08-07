@@ -29,7 +29,7 @@ from traitlet_widgets import model_view_for
 
 model = Model()
 view = model_view_for(Model)
-view.model = model
+view.value = model
 ```
 
 At present, this does not return the view class, and as such is of limited use.
