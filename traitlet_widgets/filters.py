@@ -2,7 +2,7 @@ from typing import Tuple
 
 import traitlets
 
-from .view_factories import CanFollowTraitType
+from .view_factories import FilterType
 
 
 def logical_and(left, right):
@@ -43,30 +43,38 @@ boolean_expression = BooleanExpression
 
 
 @boolean_expression
-def is_public_trait(model: traitlets.HasTraits, path: Tuple[str, ...]) -> bool:
+def is_public_trait(
+    model: traitlets.HasTraits, path: Tuple[str, ...], trait: traitlets.TraitType
+) -> bool:
     return not path[-1].startswith("_")
 
 
 @boolean_expression
-def is_own_trait(model: traitlets.HasTraits, path: Tuple[str, ...]) -> bool:
+def is_own_trait(
+    model: traitlets.HasTraits, path: Tuple[str, ...], trait: traitlets.TraitType
+) -> bool:
     return path[-1] in model.class_own_traits()
 
 
-def is_whitelisted(*paths: Tuple[str]) -> CanFollowTraitType:
+def is_whitelisted(*paths: Tuple[str]) -> FilterType:
     whitelist = set(paths)
 
     @boolean_expression
-    def wrapper(model: traitlets.HasTraits, path: Tuple[str, ...]) -> bool:
+    def wrapper(
+        model: traitlets.HasTraits, path: Tuple[str, ...], trait: traitlets.TraitType
+    ) -> bool:
         return path in whitelist
 
     return wrapper
 
 
-def is_not_blacklisted(*paths: Tuple[str]) -> CanFollowTraitType:
+def is_not_blacklisted(*paths: Tuple[str]) -> FilterType:
     blacklist = set(paths)
 
     @boolean_expression
-    def wrapper(model: traitlets.HasTraits, path: Tuple[str, ...]) -> bool:
+    def wrapper(
+        model: traitlets.HasTraits, path: Tuple[str, ...], trait: traitlets.TraitType
+    ) -> bool:
         return path not in blacklist
 
     return wrapper

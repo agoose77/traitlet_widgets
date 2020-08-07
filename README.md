@@ -23,17 +23,6 @@ view = model_view(model)
 which gives  
 ![Screenshot of result of `model_view`](images/model_view.png)
 
-There is also a `model_view_for` function to generate the view from the model class:
-```python
-from traitlet_widgets import model_view_for
-
-model = Model()
-view = model_view_for(Model)
-view.value = model
-```
-
-At present, this does not return the view class, and as such is of limited use.
-
 ## UI Customisation
 The UI can be customised through the use of `TraitType.tag()` or a custom transformer function.
 
@@ -63,11 +52,11 @@ class Model(HasTraits):
     name = Unicode()
     age = Integer()
 
-def transform_trait(ctx, model, name, trait, widget):
-    if name == "name":
+def transform_trait(model, trait, widget, ctx):
+    if ctx.name == "name":
         widget.description = "Model name"
 
-model_view(Model(), transformer=transform_trait)
+model_view(Model(), transform_trait=transform_trait)
 ```
 
 ![Screenshot of result of `model_view`](images/model_view_tag.png)
@@ -87,17 +76,23 @@ model_view(Model())
 ![Screenshot of result of `model_view`](images/model_view_slider.png)
 
 ```python
-from traitlet_widgets import create_trait_view, model_view
 import ipywidgets as widgets
 
-def transform_trait(ctx, model, name, trait, widget):
-    if name == "age":
-        new_widget = create_trait_view(ctx, trait, variant=widgets.BoundedIntText)
-        return new_widget
+def transform_trait(model, trait, widget, ctx):
+    if ctx.name == "age":
+        # Create a bounded int text instead of a slider
+        return ctx.create_trait_view(
+            trait, {"variant": widgets.BoundedIntText, "description": ctx.display_name}
+        )
 
-model_view(Model(), transformer=transform_trait)
+
+model_view(Model(), transform_trait=transform_trait)
 ```
 
 ![Screenshot of result of `model_view`](images/model_view_bounded.png)
 
 This approach may be preferred if there is a desire to remove UI descriptions from the model.
+
+### Further Customisation
+Through the transformer mechanism, the `ViewFactoryContext` context object can be used to create particular widget variants and customised widgets. Alternatively, you can inject your own widgets here simply by returning them.
+All widgets are linked to the underlying model through the `value` trait. The widget must also provide `disabled` and `description` traits. 
