@@ -7,17 +7,6 @@ FilterType = Callable[
 ]
 
 
-TransformerType = Callable[
-    [
-        Type[traitlets.HasTraits],
-        traitlets.TraitType,
-        widgets.Widget,
-        "ViewFactoryContext",
-    ],
-    Optional[widgets.Widget],
-]
-
-
 VariantIterator = Iterator[Tuple[Type[widgets.Widget], Dict[str, Any]]]
 TraitViewFactoryType = Callable[
     [traitlets.TraitType, Dict[str, Any], "ViewFactoryContext"], VariantIterator

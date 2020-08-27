@@ -5,8 +5,7 @@ import traitlets
 
 from .factory import ViewFactory
 from .types import (
-    FilterType,
-    TransformerType,
+    FilterType
 )
 from .widgets import ModelViewWidget
 
@@ -15,7 +14,6 @@ default_logger = getLogger(__name__)
 
 def model_view(
     model: traitlets.HasTraits,
-    transform_trait: TransformerType = None,
     filter_trait: FilterType = None,
     namespace: Dict[str, Any] = None,
     logger: Logger = default_logger,
@@ -24,7 +22,6 @@ def model_view(
     """Generate a view for a model
 
     :param model: observable (`.observe`) model
-    :param transform_trait: function to visit found members
     :param namespace: namespace for lookups
     :param logger: logger to use
     :param filter_trait: condition function to determine whether to follow traits by path
@@ -32,7 +29,6 @@ def model_view(
     """
     factory = ViewFactory(
         filter_trait=filter_trait,
-        transform_trait=transform_trait,
         namespace=namespace,
         logger=logger,
     )
