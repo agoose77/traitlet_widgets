@@ -1,8 +1,20 @@
 from logging import Logger, getLogger
-from typing import Any, Callable, Dict, Iterator, Optional, Type, Tuple, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    FrozenSet,
+    Iterator,
+    Optional,
+    Type,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import ipywidgets as widgets
 import traitlets
+import dataclasses
 
 from .types import TraitViewFactoryType
 from .widgets import ModelViewWidget
@@ -90,18 +102,25 @@ def trait_view_variants(*trait_types: Type[traitlets.TraitType]):
     return wrapper
 
 
+T = TypeVar("T")
+
+
+@dataclasses.dataclass(frozen=True)
 class ViewFactoryContext:
-    def __init__(self, factory: "ViewFactory", path: Tuple[str, ...]):
-        self._factory = factory
-        self.visited = set()
-        self.path = path
-        self.logger = factory.logger
+    _factory: "ViewFactory"
+    _visited_model_classes: FrozenSet[Type[traitlets.HasTraits]] = frozenset()
+    path: Tuple[str, ...] = ()
 
     @property
     def name(self) -> Union[str, None]:
-        if self.path:
+        try:
             return self.path[-1]
-        return None
+        except IndexError:
+            return None
+
+    @property
+    def logger(self) -> Logger:
+        return self._factory.logger
 
     @property
     def display_name(self) -> Union[str, None]:
@@ -109,17 +128,27 @@ class ViewFactoryContext:
             return None
         return self.name.replace("_", " ").title()
 
-    def create_widgets_for_model_cls(self, model_cls: Type[traitlets.HasTraits]):
+    def create_widgets_for_model_cls(self, model_cls: Type[traitlets.HasTraits]) -> Dict[str, widgets.Widget]:
         return self._factory.create_widgets_for_model_cls(model_cls, self)
 
-    def create_trait_view(self, trait: traitlets.TraitType, metadata: Dict[str, Any]):
+    def create_trait_view(self, trait: traitlets.TraitType, metadata: Dict[str, Any]) -> widgets.Widget:
         return self._factory.create_trait_view(trait, metadata, self)
 
-    def resolve(self, name_or_cls: Union[type, str]) -> type:
+    def enter_model_cls(
+        self, model_cls: Type[traitlets.HasTraits]
+    ) -> "ViewFactoryContext":
+        if model_cls in self._visited_model_classes:
+            raise ValueError(f"Already visited {model_cls!r}")
+
+        return dataclasses.replace(
+            self, _visited_model_classes=self._visited_model_classes | {model_cls}
+        )
+
+    def resolve(self, name_or_cls: Union[str, Type[T]]) -> Type[T]:
         return self._factory.resolve(name_or_cls)
 
-    def follow(self, name: str) -> "ViewFactoryContext":
-        return type(self)(self._factory, self.path + (name,))
+    def follow_trait(self, name: str) -> "ViewFactoryContext":
+        return dataclasses.replace(self, path=self.path + (name,))
 
 
 FilterType = Callable[
@@ -144,9 +173,6 @@ TraitViewFactoryType = Callable[
 ]
 
 
-T = TypeVar("T")
-
-
 class ViewFactory:
     def __init__(
         self,
@@ -157,7 +183,7 @@ class ViewFactory:
         self.logger = logger
         self._namespace = namespace or {}
         self._visited = set()
-        self._root_ctx = ViewFactoryContext(self, ())
+        self._root_ctx = ViewFactoryContext(self)
         self._filter_trait = filter_trait
 
     def can_visit_trait(
@@ -174,7 +200,9 @@ class ViewFactory:
             return self._filter_trait(model_cls, trait, ctx)
         return True
 
-    def create_root_view(self, model: traitlets.HasTraits, metadata: Dict[str, Any] = None):
+    def create_root_view(
+        self, model: traitlets.HasTraits, metadata: Dict[str, Any] = None
+    ):
         """
 
         :param model:
@@ -251,10 +279,7 @@ class ViewFactory:
         :param ctx: factory context
         :return:
         """
-        if model_cls in self._visited:
-            raise ValueError(f"Already visited {model_cls!r}")
-
-        self._visited.add(model_cls)
+        ctx = ctx.enter_model_cls(model_cls)
 
         model_widgets = {}
         for name, widget in self.iter_widgets_for_model(model_cls, ctx):
@@ -286,7 +311,7 @@ class ViewFactory:
         :return:
         """
         for name, trait in self.iter_traits(model_cls):
-            trait_ctx = ctx.follow(name)
+            trait_ctx = ctx.follow_trait(name)
 
             if not self.can_visit_trait(model_cls, trait, trait_ctx):
                 continue
