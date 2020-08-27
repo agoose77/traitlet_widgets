@@ -15,15 +15,6 @@ _trait_view_variant_factories: Dict[
 ] = {}
 
 
-def member_names_ordered(cls):
-    return [
-        k
-        for c in reversed(cls.__mro__)
-        for k, v in vars(c).items()
-        if isinstance(v, traitlets.TraitType)
-    ]
-
-
 def request_constructor_for_variant(
     variant_kwarg_pairs, variant: Type[widgets.Widget] = None
 ) -> Tuple[Any, Dict[str, Any]]:
@@ -280,7 +271,10 @@ class ViewFactory:
         :param model_cls: model class object
         :return:
         """
-        yield from model_cls.class_traits().items()
+        for c in reversed(model_cls.__mro__):
+            for k, v in vars(c).items():
+                if isinstance(v, traitlets.TraitType):
+                    yield k, v
 
     def iter_widgets_for_model(
         self, model_cls: Type[traitlets.HasTraits], ctx: ViewFactoryContext
