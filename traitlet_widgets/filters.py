@@ -2,7 +2,7 @@ from typing import Tuple
 
 import traitlets
 
-from .view_factories import FilterType
+from .types import FilterType
 
 
 def logical_and(left, right):

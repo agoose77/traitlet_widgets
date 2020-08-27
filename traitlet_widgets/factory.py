@@ -1,13 +1,93 @@
-import math
 from logging import Logger, getLogger
 from typing import Any, Callable, Dict, Iterator, Optional, Type, Tuple, Union
 
 import ipywidgets as widgets
 import traitlets
 
+from .types import TraitViewFactoryType
 from .widgets import ModelViewWidget
 
 default_logger = getLogger(__name__)
+
+
+_trait_view_variant_factories: Dict[
+    Type[traitlets.TraitType], TraitViewFactoryType
+] = {}
+
+
+def request_constructor_for_variant(
+    variant_kwarg_pairs, variant: Type[widgets.Widget] = None
+) -> Tuple[Any, Dict[str, Any]]:
+    """Return best widget constructor from a series of candidates. Attempt to satisfy variant.
+
+    :param variant_kwarg_pairs: sequence of (widget_cls, kwarg) pairs
+    :param variant: optional requested variant.
+    :return:
+    """
+    assert variant_kwarg_pairs
+
+    for cls, kwargs in variant_kwarg_pairs:
+        if cls is variant:
+            break
+    else:
+        default_logger.debug(
+            f"Unable to find variant {variant} in {variant_kwarg_pairs}"
+        )
+
+    return cls, kwargs
+
+
+def get_trait_view_variant_factory(
+    trait_type: Type[traitlets.TraitType],
+) -> TraitViewFactoryType:
+    """Get a view factory for a given trait class
+
+    :param trait_type: trait class
+    :return:
+    """
+    for cls in trait_type.__mro__:
+        try:
+            return _trait_view_variant_factories[cls]
+        except KeyError:
+            continue
+    raise ValueError(f"Couldn't find factory for {trait_type}")
+
+
+def register_trait_view_variant_factory(
+    *trait_types: Type[traitlets.TraitType], variant_factory: TraitViewFactoryType
+):
+    """Register a view factory for a given traitlet type(s)
+
+    :param trait_types: trait class(es) to register
+    :param variant_factory: view factory for trait class(es)
+    :return:
+    """
+    for trait_type in trait_types:
+        _trait_view_variant_factories[trait_type] = variant_factory
+
+
+def unregister_trait_view_variant_factory(*trait_types: Type[traitlets.TraitType]):
+    """Unregister a view factory for a given traitlet type(s)
+
+    :param trait_types: trait class(es) to unregister
+    :return:
+    """
+    for trait_type in trait_types:
+        del _trait_view_variant_factories[trait_type]
+
+
+def trait_view_variants(*trait_types: Type[traitlets.TraitType]):
+    """Decorator for  registering view factory functions
+
+    :param trait_types: trait class(es) to register
+    :return:
+    """
+
+    def wrapper(factory):
+        register_trait_view_variant_factory(*trait_types, variant_factory=factory)
+        return factory
+
+    return wrapper
 
 
 class ViewFactoryContext:
@@ -61,9 +141,6 @@ VariantIterator = Iterator[Tuple[Type[widgets.Widget], Dict[str, Any]]]
 TraitViewFactoryType = Callable[
     [traitlets.TraitType, Dict[str, Any], ViewFactoryContext], VariantIterator
 ]
-_trait_view_variant_factories: Dict[
-    Type[traitlets.TraitType], TraitViewFactoryType
-] = {}
 
 
 class ViewFactory:
@@ -158,9 +235,7 @@ class ViewFactory:
 
             # Set description only if not set by tag
             # Required because metadata field takes priority over tag metadata
-            description = trait.metadata.get(
-                "description", trait_ctx.display_name
-            )
+            description = trait.metadata.get("description", trait_ctx.display_name)
 
             try:
                 widget = self.create_trait_view(
@@ -205,158 +280,3 @@ class ViewFactory:
             return widget
 
         return self._transform_trait(model_cls, trait, widget, ctx) or widget
-
-
-def request_constructor_for_variant(
-    variant_kwarg_pairs, variant: Type[widgets.Widget] = None
-) -> Tuple[Any, Dict[str, Any]]:
-    """Return best widget constructor from a series of candidates. Attempt to satisfy variant.
-
-    :param variant_kwarg_pairs: sequence of (widget_cls, kwarg) pairs
-    :param variant: optional requested variant.
-    :return:
-    """
-    assert variant_kwarg_pairs
-
-    for cls, kwargs in variant_kwarg_pairs:
-        if cls is variant:
-            break
-    else:
-        default_logger.debug(
-            f"Unable to find variant {variant} in {variant_kwarg_pairs}"
-        )
-
-    return cls, kwargs
-
-
-def get_trait_view_variant_factory(
-    trait_type: Type[traitlets.TraitType],
-) -> TraitViewFactoryType:
-    """Get a view factory for a given trait class
-
-    :param trait_type: trait class
-    :return:
-    """
-    for cls in trait_type.__mro__:
-        try:
-            return _trait_view_variant_factories[cls]
-        except KeyError:
-            continue
-    raise ValueError(f"Couldn't find factory for {trait_type}")
-
-
-def register_trait_view_variant_factory(
-    *trait_types: Type[traitlets.TraitType], variant_factory: TraitViewFactoryType
-):
-    """Register a view factory for a given traitlet type(s)
-
-    :param trait_types: trait class(es) to register
-    :param variant_factory: view factory for trait class(es)
-    :return:
-    """
-    for trait_type in trait_types:
-        _trait_view_variant_factories[trait_type] = variant_factory
-
-
-def unregister_trait_view_variant_factory(*trait_types: Type[traitlets.TraitType]):
-    """Unregister a view factory for a given traitlet type(s)
-
-    :param trait_types: trait class(es) to unregister
-    :return:
-    """
-    for trait_type in trait_types:
-        del _trait_view_variant_factories[trait_type]
-
-
-def trait_view_variants(*trait_types: Type[traitlets.TraitType]):
-    """Decorator for  registering view factory functions
-
-    :param trait_types: trait class(es) to register
-    :return:
-    """
-
-    def wrapper(factory):
-        register_trait_view_variant_factory(*trait_types, variant_factory=factory)
-        return factory
-
-    return wrapper
-
-
-@trait_view_variants(traitlets.Instance)
-def _instance_view_factory(
-    trait: traitlets.Instance, metadata: Dict[str, Any], ctx: ViewFactoryContext
-) -> VariantIterator:
-    model_cls = ctx.resolve(trait.klass)
-
-    if not issubclass(model_cls, traitlets.HasTraits):
-        raise ValueError("Cannot render a non-traitlet model")
-
-    model_view_cls = ModelViewWidget.specialise_for_cls(model_cls)
-    yield model_view_cls, {"ctx": ctx, **metadata}
-
-
-@trait_view_variants(
-    traitlets.Unicode, traitlets.ObjectName, traitlets.DottedObjectName
-)
-def _unicode_view_factory(
-    trait: traitlets.TraitType, metadata: Dict[str, Any], ctx: ViewFactoryContext
-) -> VariantIterator:
-    yield widgets.Text, metadata
-
-
-@trait_view_variants(traitlets.Enum)
-def _enum_view_factory(
-    trait: traitlets.Enum, metadata: Dict[str, Any], ctx: ViewFactoryContext
-) -> VariantIterator:
-    params = {"options": sorted(trait.values), **metadata}
-
-    yield widgets.SelectionSlider, params
-    yield widgets.Dropdown, params
-
-
-@trait_view_variants(traitlets.Bool)
-def _bool_view_factory(
-    trait: traitlets.Bool, metadata: Dict[str, Any], ctx: ViewFactoryContext
-) -> VariantIterator:
-    yield widgets.Checkbox, {"indent": True, **metadata}
-
-
-@trait_view_variants(traitlets.Float)
-def _float_view_factory(
-    trait: traitlets.Float, metadata: Dict[str, Any], ctx: ViewFactoryContext
-) -> VariantIterator:
-    # Unbounded variant
-    yield widgets.FloatText, metadata
-
-    # Build UI params store
-    params = {"min": trait.min, "max": trait.max, **metadata}
-
-    # Require min to be set
-    if params["min"] is None or not math.isfinite(params["min"]):
-        return
-
-    # Require max to be set
-    if params["max"] is None or not math.isfinite(params["max"]):
-        return
-
-    # Bounded variants:
-    yield widgets.BoundedFloatText, params
-    yield widgets.FloatSlider, params
-
-    # Logarithmic bounded variant
-    if params.get("base") is not None:
-        yield widgets.FloatLogSlider, params
-
-
-@trait_view_variants(traitlets.Integer)
-def _integer_view_factory(
-    trait: traitlets.Integer, metadata: Dict[str, Any], ctx: ViewFactoryContext
-) -> VariantIterator:
-    yield widgets.IntText, metadata
-
-    params = {"min": trait.min, "max": trait.max, **metadata}
-    if params["min"] is None or params["max"] is None:
-        return
-
-    yield widgets.BoundedIntText, params
-    yield widgets.IntSlider, params

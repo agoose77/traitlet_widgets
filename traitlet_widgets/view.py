@@ -1,11 +1,11 @@
 from logging import Logger, getLogger
-from typing import Type, Dict, Any, Tuple
+from typing import Dict, Any
 
 import traitlets
 
-from .view_factories import (
+from .factory import ViewFactory
+from .types import (
     FilterType,
-    ViewFactory,
     TransformerType,
 )
 from .widgets import ModelViewWidget
