@@ -21,12 +21,6 @@ def model_view(
     logger: Logger = default_logger,
     **kwargs: Dict[str, Any]
 ) -> "ModelViewWidget":
-    factory = ViewFactory(
-        filter_trait=filter_trait,
-        transform_trait=transform_trait,
-        namespace=namespace,
-        logger=logger,
-    )
     """Generate a view for a model
 
     :param model: observable (`.observe`) model
@@ -36,4 +30,10 @@ def model_view(
     :param filter_trait: condition function to determine whether to follow traits by path
     :return:
     """
+    factory = ViewFactory(
+        filter_trait=filter_trait,
+        transform_trait=transform_trait,
+        namespace=namespace,
+        logger=logger,
+    )
     return factory.create_root_view(model, metadata=kwargs)
