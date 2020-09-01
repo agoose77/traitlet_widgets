@@ -196,6 +196,10 @@ class ViewFactory:
         :param ctx: factory context
         :return:
         """
+        # Skip hidden traits
+        if trait.metadata.get("hidden"):
+            return False
+
         if callable(self._filter_trait):
             return self._filter_trait(model_cls, trait, ctx)
         return True
