@@ -60,7 +60,10 @@ class ModelViewWidget(widgets.HBox):
         for n, w in self.widgets.items():
             try:
                 self._links.append(widgets.link((model, n), (w, "value")))
-                self._links.append(widgets.link((self, "disabled"), (w, "disabled")))
+
+                # Allow widget to be disabled if model is
+                if hasattr(w, "disabled"):
+                    self._links.append(widgets.link((self, "disabled"), (w, "disabled")))
             except:
                 if self._logger is not None:
                     self._logger.exception(f"Error in linking widget {n}")
