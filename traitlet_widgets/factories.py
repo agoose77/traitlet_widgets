@@ -28,14 +28,14 @@ def _instance_view_factory(
 @trait_view_variants(
     traitlets.Unicode, traitlets.ObjectName, traitlets.DottedObjectName
 )
-def _unicode_view_factory(
+def unicode_view_factory(
     trait: traitlets.TraitType, metadata: Dict[str, Any], ctx: ViewFactoryContext
 ) -> VariantIterator:
     yield widgets.Text, metadata
 
 
 @trait_view_variants(traitlets.Enum)
-def _enum_view_factory(
+def enum_view_factory(
     trait: traitlets.Enum, metadata: Dict[str, Any], ctx: ViewFactoryContext
 ) -> VariantIterator:
     params = {"options": sorted(trait.values), **metadata}
@@ -45,14 +45,14 @@ def _enum_view_factory(
 
 
 @trait_view_variants(traitlets.Bool)
-def _bool_view_factory(
+def bool_view_factory(
     trait: traitlets.Bool, metadata: Dict[str, Any], ctx: ViewFactoryContext
 ) -> VariantIterator:
     yield widgets.Checkbox, {"indent": True, **metadata}
 
 
 @trait_view_variants(traitlets.Float)
-def _float_view_factory(
+def float_view_factory(
     trait: traitlets.Float, metadata: Dict[str, Any], ctx: ViewFactoryContext
 ) -> VariantIterator:
     # Unbounded variant
@@ -79,7 +79,7 @@ def _float_view_factory(
 
 
 @trait_view_variants(traitlets.Integer)
-def _integer_view_factory(
+def integer_view_factory(
     trait: traitlets.Integer, metadata: Dict[str, Any], ctx: ViewFactoryContext
 ) -> VariantIterator:
     yield widgets.IntText, metadata
