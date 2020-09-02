@@ -13,7 +13,7 @@ default_logger = getLogger(__name__)
 
 
 @trait_view_variants(traitlets.Instance)
-def _instance_view_factory(
+def instance_view_factory(
     trait: traitlets.Instance, metadata: Dict[str, Any], ctx: ViewFactoryContext
 ) -> VariantIterator:
     model_cls = ctx.resolve(trait.klass)
