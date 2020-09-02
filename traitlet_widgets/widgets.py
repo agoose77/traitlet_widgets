@@ -63,7 +63,7 @@ class ModelViewWidget(widgets.HBox):
 
                 # Allow widget to be disabled if model is
                 if hasattr(w, "disabled"):
-                    self._links.append(widgets.link((self, "disabled"), (w, "disabled")))
+                    self._links.append(widgets.dlink((self, "disabled"), (w, "disabled")))
             except:
                 if self._logger is not None:
                     self._logger.exception(f"Error in linking widget {n}")
