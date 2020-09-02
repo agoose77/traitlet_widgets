@@ -38,7 +38,7 @@ def unicode_view_factory(
 def enum_view_factory(
     trait: traitlets.Enum, metadata: Dict[str, Any], ctx: ViewFactoryContext
 ) -> VariantIterator:
-    params = {"options": sorted(trait.values), **metadata}
+    params = {"options": trait.values, **metadata}
 
     yield widgets.SelectionSlider, params
     yield widgets.Dropdown, params
