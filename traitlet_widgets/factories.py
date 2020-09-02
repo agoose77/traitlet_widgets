@@ -75,6 +75,8 @@ def float_view_factory(
 
     # Logarithmic bounded variant
     if params.get("base") is not None:
+        params["min"] = math.log(params["min"], params["base"])
+        params["max"] = math.log(params["max"], params["base"])
         yield widgets.FloatLogSlider, params
 
 
