@@ -326,7 +326,7 @@ class ViewFactory:
 
             try:
                 widget = self.create_trait_view(
-                    trait, {"description": description}, ctx
+                    trait, {"description": description}, trait_ctx
                 )
 
             except:
