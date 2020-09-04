@@ -12,31 +12,36 @@ class ModelViewWidget(widgets.HBox):
     disabled = traitlets.Bool(False)
     value = traitlets.Instance(object)
 
-    def __init__(self, ctx, **kwargs):
-        self.description_widget = widgets.Label(value=kwargs.get("description", ""))
-        widgets.link((self.description_widget, "value"), (self, "description"))
+    def __init__(self, **kwargs):
+        self.description_label = widgets.Label(value=kwargs.get("description", ""))
+        self.widgets_vbox = widgets.VBox()
 
-        self._links = []
-        self._logger = ctx.logger
-
-        model_widgets = ctx.create_widgets_for_model_cls(
-            ctx.resolve(type(self).value.klass)
+        super().__init__(
+            children=[
+                self.description_label,
+                self.widgets_vbox,
+            ],
+            **kwargs,
         )
 
-        shared_trait_names = self.class_traits().keys() & model_widgets.keys()
+        widgets.link((self.description_label, "value"), (self, "description"))
+
+        self._links = []
+        self._logger = self.ctx.logger
+
+        # Create widgets
+        value_trait = self.traits()['value']
+        self.widgets = self.ctx.create_widgets_for_model_cls(
+            self.ctx.resolve(value_trait.klass)
+        )
+        self.widgets_vbox.children = list(self.widgets.values())
+
+        shared_trait_names = self.class_traits().keys() & self.widgets.keys()
         if shared_trait_names:
             raise ValueError(
                 f"Traits {shared_trait_names} clash with builtin widget trait names"
             )
 
-        self.widgets = model_widgets
-        super().__init__(
-            children=[
-                self.description_widget,
-                widgets.VBox(list(model_widgets.values())),
-            ],
-            **kwargs,
-        )
 
     @classmethod
     def specialise_for_cls(
