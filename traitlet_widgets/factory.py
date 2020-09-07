@@ -208,7 +208,7 @@ class ViewFactory:
         :return:
         """
         # Skip hidden traits
-        if trait.metadata.get("hidden"):
+        if ctx.metadata.get("hidden"):
             return False
 
         if callable(self._filter_trait):

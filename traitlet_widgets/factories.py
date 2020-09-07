@@ -1,6 +1,5 @@
 import math
 from logging import getLogger
-from typing import Any, Dict
 
 import ipywidgets as widgets
 import traitlets
