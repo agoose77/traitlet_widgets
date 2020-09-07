@@ -13,28 +13,21 @@ class ModelViewWidget(widgets.HBox):
     value = traitlets.Instance(object)
 
     def __init__(self, **kwargs):
+        # Create description label
         self.description_label = widgets.Label(value=kwargs.get("description", ""))
-        self.widgets_vbox = widgets.VBox()
-
-        super().__init__(
-            children=[
-                self.description_label,
-                self.widgets_vbox,
-            ],
-            **kwargs,
-        )
-
         widgets.link((self.description_label, "value"), (self, "description"))
 
-        self._links = []
-        self._logger = self.ctx.logger
+        # Create vbox for widgets
+        self.widgets_vbox = widgets.VBox()
 
         # Create widgets
-        value_trait = self.traits()['value']
-        self.widgets = self.ctx.create_widgets_for_model_cls(
-            self.ctx.resolve(value_trait.klass)
-        )
+        value_trait = self.traits()["value"]
+        ctx = kwargs["ctx"]
+        self.widgets = ctx.create_widgets_for_model_cls(ctx.resolve(value_trait.klass))
         self.widgets_vbox.children = list(self.widgets.values())
+        self._links = []
+
+        self._logger = ctx.logger
 
         shared_trait_names = self.class_traits().keys() & self.widgets.keys()
         if shared_trait_names:
@@ -42,6 +35,9 @@ class ModelViewWidget(widgets.HBox):
                 f"Traits {shared_trait_names} clash with builtin widget trait names"
             )
 
+        super().__init__(
+            children=[self.description_label, self.widgets_vbox,], **kwargs,
+        )
 
     @classmethod
     def specialise_for_cls(
@@ -68,7 +64,9 @@ class ModelViewWidget(widgets.HBox):
 
                 # Allow widget to be disabled if model is
                 if hasattr(w, "disabled"):
-                    self._links.append(widgets.dlink((self, "disabled"), (w, "disabled")))
+                    self._links.append(
+                        widgets.dlink((self, "disabled"), (w, "disabled"))
+                    )
             except:
                 if self._logger is not None:
                     self._logger.exception(f"Error in linking widget {n}")

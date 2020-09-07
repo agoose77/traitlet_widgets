@@ -14,7 +14,7 @@ default_logger = getLogger(__name__)
 
 @trait_view_variants(traitlets.Instance)
 def instance_view_factory(
-    trait: traitlets.Instance, metadata: Dict[str, Any], ctx: ViewFactoryContext
+    trait: traitlets.Instance, ctx: ViewFactoryContext
 ) -> VariantIterator:
     model_cls = ctx.resolve(trait.klass)
 
@@ -22,23 +22,23 @@ def instance_view_factory(
         raise ValueError("Cannot render a non-traitlet model")
 
     model_view_cls = ModelViewWidget.specialise_for_cls(model_cls)
-    yield model_view_cls, {"ctx": ctx, **metadata}
+    yield model_view_cls, {"ctx": ctx, **ctx.metadata}
 
 
 @trait_view_variants(
     traitlets.Unicode, traitlets.ObjectName, traitlets.DottedObjectName
 )
 def unicode_view_factory(
-    trait: traitlets.TraitType, metadata: Dict[str, Any], ctx: ViewFactoryContext
+    trait: traitlets.TraitType, ctx: ViewFactoryContext
 ) -> VariantIterator:
-    yield widgets.Text, metadata
+    yield widgets.Text, ctx.metadata
 
 
 @trait_view_variants(traitlets.Enum)
 def enum_view_factory(
-    trait: traitlets.Enum, metadata: Dict[str, Any], ctx: ViewFactoryContext
+    trait: traitlets.Enum, ctx: ViewFactoryContext
 ) -> VariantIterator:
-    params = {"options": trait.values, **metadata}
+    params = {"options": trait.values, **ctx.metadata}
 
     yield widgets.SelectionSlider, params
     yield widgets.Dropdown, params
@@ -46,20 +46,20 @@ def enum_view_factory(
 
 @trait_view_variants(traitlets.Bool)
 def bool_view_factory(
-    trait: traitlets.Bool, metadata: Dict[str, Any], ctx: ViewFactoryContext
+    trait: traitlets.Bool, ctx: ViewFactoryContext
 ) -> VariantIterator:
-    yield widgets.Checkbox, {"indent": True, **metadata}
+    yield widgets.Checkbox, {"indent": True, **ctx.metadata}
 
 
 @trait_view_variants(traitlets.Float)
 def float_view_factory(
-    trait: traitlets.Float, metadata: Dict[str, Any], ctx: ViewFactoryContext
+    trait: traitlets.Float, ctx: ViewFactoryContext
 ) -> VariantIterator:
     # Unbounded variant
-    yield widgets.FloatText, metadata
+    yield widgets.FloatText, ctx.metadata
 
     # Build UI params store
-    params = {"min": trait.min, "max": trait.max, **metadata}
+    params = {"min": trait.min, "max": trait.max, **ctx.metadata}
 
     # Require min to be set
     if params["min"] is None or not math.isfinite(params["min"]):
@@ -82,11 +82,11 @@ def float_view_factory(
 
 @trait_view_variants(traitlets.Integer)
 def integer_view_factory(
-    trait: traitlets.Integer, metadata: Dict[str, Any], ctx: ViewFactoryContext
+    trait: traitlets.Integer, ctx: ViewFactoryContext
 ) -> VariantIterator:
-    yield widgets.IntText, metadata
+    yield widgets.IntText, ctx.metadata
 
-    params = {"min": trait.min, "max": trait.max, **metadata}
+    params = {"min": trait.min, "max": trait.max, **ctx.metadata}
     if params["min"] is None or params["max"] is None:
         return
 

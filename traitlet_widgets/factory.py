@@ -15,6 +15,7 @@ from typing import (
 import ipywidgets as widgets
 import traitlets
 import dataclasses
+import inspect
 
 from .types import TraitViewFactoryType
 from .widgets import ModelViewWidget
@@ -109,6 +110,7 @@ T = TypeVar("T")
 class ViewFactoryContext:
     _factory: "ViewFactory"
     _visited_model_classes: FrozenSet[Type[traitlets.HasTraits]] = frozenset()
+    metadata: Dict[str, Any] = dataclasses.field(default_factory=dict)
     path: Tuple[str, ...] = ()
 
     @property
@@ -128,11 +130,13 @@ class ViewFactoryContext:
             return None
         return self.name.replace("_", " ").title()
 
-    def create_widgets_for_model_cls(self, model_cls: Type[traitlets.HasTraits]) -> Dict[str, widgets.Widget]:
+    def create_widgets_for_model_cls(
+        self, model_cls: Type[traitlets.HasTraits]
+    ) -> Dict[str, widgets.Widget]:
         return self._factory.create_widgets_for_model_cls(model_cls, self)
 
-    def create_trait_view(self, trait: traitlets.TraitType, metadata: Dict[str, Any]) -> widgets.Widget:
-        return self._factory.create_trait_view(trait, metadata, self)
+    def create_trait_view(self, trait: traitlets.TraitType) -> widgets.Widget:
+        return self._factory.create_trait_view(trait, self)
 
     def enter_model_cls(
         self, model_cls: Type[traitlets.HasTraits]
@@ -141,14 +145,20 @@ class ViewFactoryContext:
             raise ValueError(f"Already visited {model_cls!r}")
 
         return dataclasses.replace(
-            self, _visited_model_classes=self._visited_model_classes | {model_cls}
+            self, _visited_model_classes=(self._visited_model_classes | {model_cls})
+        )
+
+    def follow_trait(
+        self, name: str, trait: traitlets.TraitType
+    ) -> "ViewFactoryContext":
+        return dataclasses.replace(
+            self,
+            path=self.path + (name,),
+            metadata={**trait.metadata, **self.metadata.get(name, {})},
         )
 
     def resolve(self, name_or_cls: Union[str, Type[T]]) -> Type[T]:
         return self._factory.resolve(name_or_cls)
-
-    def follow_trait(self, name: str) -> "ViewFactoryContext":
-        return dataclasses.replace(self, path=self.path + (name,))
 
 
 FilterType = Callable[
@@ -179,11 +189,12 @@ class ViewFactory:
         logger: Logger = default_logger,
         namespace: Dict[str, Any] = None,
         filter_trait: FilterType = None,
+        metadata: Dict[str, Any] = None,
     ):
         self.logger = logger
         self._namespace = namespace or {}
         self._visited = set()
-        self._root_ctx = ViewFactoryContext(self)
+        self._root_ctx = ViewFactoryContext(self, metadata=metadata or {})
         self._filter_trait = filter_trait
 
     def can_visit_trait(
@@ -205,50 +216,36 @@ class ViewFactory:
         return True
 
     def create_root_view(
-        self, model: traitlets.HasTraits, metadata: Dict[str, Any] = None
-    ):
-        """
+        self, model: traitlets.HasTraits, **kwargs: Any
+    ) -> ModelViewWidget:
+        """Create the root view for a model
 
-        :param model:
-        :param metadata: UI metadata
+        :param model: HasTraits instance
+        :param kwargs: model widget keyword arguments
         :return:
         """
         model_view_cls = ModelViewWidget.specialise_for_cls(type(model))
 
-        if metadata is None:
-            metadata = {}
-
-        return model_view_cls(ctx=self._root_ctx, value=model, **metadata)
+        return model_view_cls(ctx=self._root_ctx, value=model, **kwargs)
 
     def create_trait_view(
         self,
         trait: traitlets.TraitType,
-        metadata: Dict[str, Any] = None,
-        ctx: ViewFactoryContext = None,
+        ctx: ViewFactoryContext,
     ) -> widgets.Widget:
         """Return the best view constructor for a given trait
 
         :param trait: trait instance
-        :param metadata: UI metadata
         :param ctx: factory context
         :return:
         """
-        if ctx is None:
-            ctx = self._root_ctx
-
-        if metadata is None:
-            metadata = {}
-
         factory = get_trait_view_variant_factory(type(trait))
 
-        # Allow model or caller to set view metadata
-        view_metadata = {**trait.metadata, **metadata}
-
         # Remove 'variant' field from metadata
-        variant = view_metadata.pop("variant", None)
+        variant = ctx.metadata.get("variant", None)
 
         # Allow library to propose variants
-        supported_variants = list(factory(trait, view_metadata, ctx))
+        supported_variants = list(factory(trait, ctx))
         if not supported_variants:
             raise ValueError(f"No variant found for {trait}")
 
@@ -261,8 +258,9 @@ class ViewFactory:
                 supported_variants, variant
             )
 
-        # Traitlets cannot receive additional arguments.
-        # Use factories should handle these themselves
+        # Traitlets cannot receive additional arguments
+        # Although the end widget should resolve to a `HasTraits` instance,
+        # permit deferred constructors to be used
         if issubclass(cls, traitlets.HasTraits):
             trait_names = set(cls.class_trait_names())
         elif hasattr(cls, "valid_arg_names"):
@@ -321,19 +319,23 @@ class ViewFactory:
         :return:
         """
         for name, trait in self.iter_traits(model_cls):
-            trait_ctx = ctx.follow_trait(name)
+            trait_ctx = ctx.follow_trait(name, trait)
 
             if not self.can_visit_trait(model_cls, trait, trait_ctx):
                 continue
 
-            # Set description only if not set by tag
-            # Required because metadata field takes priority over tag metadata
-            description = trait.metadata.get("description", trait_ctx.display_name)
+            # Inject description only if not set by trait tag or metadata
+            if trait_ctx.metadata.get("description") is None:
+                trait_ctx = dataclasses.replace(
+                    trait_ctx,
+                    metadata={
+                        **trait_ctx.metadata,
+                        "description": trait_ctx.display_name,
+                    },
+                )
 
             try:
-                widget = self.create_trait_view(
-                    trait, {"description": description}, trait_ctx
-                )
+                widget = self.create_trait_view(trait, trait_ctx)
 
             except:
                 ctx.logger.exception(

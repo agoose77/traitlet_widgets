@@ -4,9 +4,7 @@ from typing import Dict, Any
 import traitlets
 
 from .factory import ViewFactory
-from .types import (
-    FilterType
-)
+from .types import FilterType
 from .widgets import ModelViewWidget
 
 default_logger = getLogger(__name__)
@@ -32,4 +30,4 @@ def model_view(
         namespace=namespace,
         logger=logger,
     )
-    return factory.create_root_view(model, metadata=kwargs)
+    return factory.create_root_view(model, **kwargs)
