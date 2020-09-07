@@ -18,11 +18,9 @@ def instance_view_factory(
 ) -> VariantIterator:
     model_cls = ctx.resolve(trait.klass)
 
-    if not issubclass(model_cls, traitlets.HasTraits):
-        raise ValueError("Cannot render a non-traitlet model")
-
-    model_view_cls = ModelViewWidget.specialise_for_cls(model_cls)
-    yield model_view_cls, {"ctx": ctx, **ctx.metadata}
+    if issubclass(model_cls, traitlets.HasTraits):
+        model_view_cls = ModelViewWidget.specialise_for_cls(model_cls)
+        yield model_view_cls, {"ctx": ctx, **ctx.metadata}
 
 
 @trait_view_variants(
