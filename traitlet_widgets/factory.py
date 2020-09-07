@@ -265,9 +265,15 @@ class ViewFactory:
         # Use factories should handle these themselves
         if issubclass(cls, traitlets.HasTraits):
             trait_names = set(cls.class_trait_names())
-            constructor_kwargs = {
-                k: v for k, v in constructor_kwargs.items() if k in trait_names
-            }
+        elif hasattr(cls, "valid_arg_names"):
+            trait_names = set(cls.valid_arg_names())
+        else:
+            signature = inspect.signature(cls)
+            trait_names = signature.parameters.keys()
+
+        constructor_kwargs = {
+            k: v for k, v in constructor_kwargs.items() if k in trait_names
+        }
 
         # Set widget disabled according to trait by default
         kwargs = {"disabled": trait.read_only, **constructor_kwargs}
