@@ -15,7 +15,8 @@ def model_view(
     filter_trait: FilterType = None,
     namespace: Dict[str, Any] = None,
     logger: Logger = default_logger,
-    **kwargs: Dict[str, Any]
+    metadata: Dict[str, Any] = None,
+    **kwargs: Any
 ) -> "ModelViewWidget":
     """Generate a view for a model
 
@@ -26,8 +27,6 @@ def model_view(
     :return:
     """
     factory = ViewFactory(
-        filter_trait=filter_trait,
-        namespace=namespace,
-        logger=logger,
+        filter_trait=filter_trait, namespace=namespace, logger=logger, metadata=metadata
     )
     return factory.create_root_view(model, **kwargs)
