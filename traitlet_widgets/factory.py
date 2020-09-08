@@ -149,12 +149,12 @@ class ViewFactoryContext:
         )
 
     def follow_trait(
-        self, name: str, trait: traitlets.TraitType
+        self, name: str, trait_metadata: Dict[str, Any]
     ) -> "ViewFactoryContext":
         return dataclasses.replace(
             self,
             path=self.path + (name,),
-            metadata={**trait.metadata, **self.metadata.get(name, {})},
+            metadata={**trait_metadata, **self.metadata.get(name, {})},
         )
 
     def resolve(self, name_or_cls: Union[str, Type[T]]) -> Type[T]:
@@ -319,7 +319,7 @@ class ViewFactory:
         :return:
         """
         for name, trait in self.iter_traits(model_cls):
-            trait_ctx = ctx.follow_trait(name, trait)
+            trait_ctx = ctx.follow_trait(name, trait.metadata)
 
             if not self.can_visit_trait(model_cls, trait, trait_ctx):
                 continue

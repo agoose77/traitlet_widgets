@@ -5,8 +5,9 @@ import ipywidgets as widgets
 import traitlets
 
 from .factory import trait_view_variants, ViewFactoryContext
+from .traits import Callable
 from .types import VariantIterator
-from .widgets import ModelViewWidget
+from .widgets import CallableButton, ModelViewWidget
 
 default_logger = getLogger(__name__)
 
@@ -89,3 +90,8 @@ def integer_view_factory(
 
     yield widgets.BoundedIntText, params
     yield widgets.IntSlider, params
+
+
+@trait_view_variants(Callable)
+def callable_variant_factory(trait, ctx):
+    yield CallableButton, ctx.metadata
