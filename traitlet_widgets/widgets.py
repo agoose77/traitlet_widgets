@@ -58,15 +58,16 @@ class ModelViewWidget(widgets.HBox):
         self._links.clear()
 
         model = change["new"]
-        for n, w in self.widgets.items():
-            try:
-                self._links.append(widgets.link((model, n), (w, "value")))
+        with model.hold_trait_notifications():
+            for n, w in self.widgets.items():
+                try:
+                    self._links.append(widgets.link((model, n), (w, "value")))
 
-                # Allow widget to be disabled if model is
-                if hasattr(w, "disabled"):
-                    self._links.append(
-                        widgets.dlink((self, "disabled"), (w, "disabled"))
-                    )
-            except:
-                if self._logger is not None:
-                    self._logger.exception(f"Error in linking widget {n}")
+                    # Allow widget to be disabled if model is
+                    if hasattr(w, "disabled"):
+                        self._links.append(
+                            widgets.dlink((self, "disabled"), (w, "disabled"))
+                        )
+                except:
+                    if self._logger is not None:
+                        self._logger.exception(f"Error in linking widget {n}")
