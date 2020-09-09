@@ -29,6 +29,9 @@ def instance_view_factory(
 def unicode_view_factory(
     trait: traitlets.TraitType, ctx: ViewFactoryContext
 ) -> VariantIterator:
+    yield widgets.Textarea, ctx.metadata
+    yield widgets.HTML, ctx.metadata
+    yield widgets.HTMLMath
     yield widgets.Text, ctx.metadata
 
 
