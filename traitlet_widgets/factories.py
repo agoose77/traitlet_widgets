@@ -29,10 +29,13 @@ def instance_view_factory(
 def unicode_view_factory(
     trait: traitlets.TraitType, ctx: ViewFactoryContext
 ) -> VariantIterator:
-    yield widgets.Textarea, ctx.metadata
+    yield widgets.ColorPicker, ctx.metadata
+    yield widgets.Combobox, ctx.metadata
     yield widgets.HTML, ctx.metadata
     yield widgets.HTMLMath, ctx.metadata
     yield widgets.Label, ctx.metadata
+    yield widgets.Password, ctx.metadata
+    yield widgets.Textarea, ctx.metadata
     yield widgets.Text, ctx.metadata
 
 
@@ -43,6 +46,9 @@ def enum_view_factory(
     params = {"options": trait.values, **ctx.metadata}
 
     yield widgets.SelectionSlider, params
+    yield widgets.RadioButtons, params
+    yield widgets.Select, params
+    yield widgets.ToggleButtons, params
     yield widgets.Dropdown, params
 
 
@@ -50,7 +56,10 @@ def enum_view_factory(
 def bool_view_factory(
     trait: traitlets.Bool, ctx: ViewFactoryContext
 ) -> VariantIterator:
+    yield widgets.ToggleButton, ctx.metadata
     yield widgets.Checkbox, {"indent": True, **ctx.metadata}
+    if trait.read_only:
+        yield widgets.Valid, ctx.metadata
 
 
 @trait_view_variants(traitlets.Float)
@@ -63,11 +72,11 @@ def float_view_factory(
     # Build UI params store
     params = {"min": trait.min, "max": trait.max, **ctx.metadata}
 
-    # Require min to be set
+    # Require min to be set & finite
     if params["min"] is None or not math.isfinite(params["min"]):
         return
 
-    # Require max to be set
+    # Require max to be set & finite
     if params["max"] is None or not math.isfinite(params["max"]):
         return
 
@@ -92,6 +101,7 @@ def integer_view_factory(
     if params["min"] is None or params["max"] is None:
         return
 
+    yield widgets.Play, ctx.metadata
     yield widgets.BoundedIntText, params
     yield widgets.IntSlider, params
 
