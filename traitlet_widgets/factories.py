@@ -31,7 +31,8 @@ def unicode_view_factory(
 ) -> VariantIterator:
     yield widgets.Textarea, ctx.metadata
     yield widgets.HTML, ctx.metadata
-    yield widgets.HTMLMath
+    yield widgets.HTMLMath, ctx.metadata
+    yield widgets.Label, ctx.metadata
     yield widgets.Text, ctx.metadata
 
 
