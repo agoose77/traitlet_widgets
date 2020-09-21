@@ -1,11 +1,10 @@
-from typing import List, Type, Union
+from typing import Iterator, List, Type, Union
 
 import ipywidgets as widgets
 import traitlets
 
 
 class CallableButton(widgets.Button):
-
     def link_to_model(self, model, view, name):
         func = getattr(model, name)
         self.on_click(lambda _: func())
@@ -53,27 +52,47 @@ class ModelViewWidget(widgets.HBox):
             **kwargs,
         )
 
-    def _create_links_to_model(self, model: traitlets.HasTraits) -> List[traitlets.link]:
-        """Create traitlet links between model and widgets
+    def _link_widget_to_model(
+        self, name: str, widget: widgets.Widget, model: traitlets.HasTraits
+    ) -> Iterator[traitlets.link]:
+        """Link a single widget to a model.
 
-        :param model:
+        Respect read-only relationships, and delegate linking to widget if it
+        implements the necessary interface.
+
+        :param name: name of model field
+        :param widget: widget instance
+        :param model: model instance
         :return:
         """
-        for n, w in self.widgets.items():
+        # Allow widget to handle linking
+        if hasattr(widget, "link_to_model"):
+            yield from widget.link_to_model(model, self, name)
+            return
+
+        # Infer read-only state from initial widget disabled state
+        is_read_only = getattr(widget, "disabled", False)
+        link_factory = widgets.dlink if is_read_only else widgets.link
+
+        # Allow widget to be disabled when container is disabled
+        if hasattr(widget, "disabled") and not is_read_only:
+            yield widgets.dlink((self, "disabled"), (widget, "disabled"))
+
+        yield link_factory((model, name), (widget, "value"))
+
+    def _link_widgets_to_model(
+        self, model: traitlets.HasTraits
+    ) -> Iterator[traitlets.link]:
+        """Create traitlet links between model and widgets
+
+        :param model: model instance
+        :return:
+        """
+        for name, widget in self.widgets.items():
             try:
-                # Allow widget to handle linking
-                if hasattr(w, "link_to_model"):
-                    yield from w.link_to_model(model, self, n)
-                else:
-                    yield widgets.link((model, n), (w, "value"))
-
-                    # Allow widget to be disabled if model is
-                    if hasattr(w, "disabled"):
-                        yield widgets.dlink((self, "disabled"), (w, "disabled"))
-
+                yield from self._link_widget_to_model(name, widget, model)
             except:
-                if self._logger is not None:
-                    self._logger.exception(f"Error in linking widget {n}")
+                self._logger.exception(f"Error in linking widget {name}")
 
     @traitlets.observe("value")
     def _update_model_links(self, change):
@@ -83,7 +102,7 @@ class ModelViewWidget(widgets.HBox):
 
         model = change["new"]
         with model.hold_trait_notifications():
-            self._links = list(self._create_links_to_model(model))
+            self._links = [*self._link_widgets_to_model(model)]
 
     @classmethod
     def specialise_for_cls(

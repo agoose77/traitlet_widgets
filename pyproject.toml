@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "traitlet_widgets"
-version = "5.4.0"
+version = "5.4.1"
 description = "A library which provides the ability to create widget views for traitlet `HasTraits` models, and also to observe changes in a model"
 authors = ["Angus Hollands <goosey15@gmail.com>"]
 license = "MIT"
