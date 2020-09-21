@@ -239,9 +239,13 @@ class ViewFactory:
         :param ctx: factory context
         :return:
         """
-        factory = get_trait_view_variant_factory(type(trait))
 
-        # Remove 'variant' field from metadata
+        # Read 'factory' from metadata, or fall back to default variants
+        factory = ctx.metadata.get(
+            "factory", get_trait_view_variant_factory(type(trait))
+        )
+
+        # Read 'variant' field from metadata
         variant = ctx.metadata.get("variant", None)
 
         # Allow library to propose variants
