@@ -310,8 +310,9 @@ class ViewFactory:
         """
         for c in reversed(model_cls.__mro__):
             for k, v in vars(c).items():
-                if isinstance(v, traitlets.TraitType):
-                    yield k, v
+                v_final = getattr(model_cls, k)
+                if isinstance(v_final, traitlets.TraitType):
+                    yield k, v_final
 
     def iter_widgets_for_model(
         self, model_cls: Type[traitlets.HasTraits], ctx: ViewFactoryContext
