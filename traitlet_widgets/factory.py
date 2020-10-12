@@ -106,8 +106,14 @@ def trait_view_variants(*trait_types: Type[traitlets.TraitType]):
 T = TypeVar("T")
 
 
+def format_display_name(name: str) -> str:
+    return name.replace("_", " ").title()
+
+
 @dataclasses.dataclass(frozen=True)
 class ViewFactoryContext:
+    ROOT_NAME = "<root>"
+
     _factory: "ViewFactory"
     _visited_model_classes: FrozenSet[Type[traitlets.HasTraits]] = frozenset()
     metadata: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -123,12 +129,6 @@ class ViewFactoryContext:
     @property
     def logger(self) -> Logger:
         return self._factory.logger
-
-    @property
-    def display_name(self) -> Union[str, None]:
-        if self.name is None:
-            return None
-        return self.name.replace("_", " ").title()
 
     def create_widgets_for_model_cls(
         self, model_cls: Type[traitlets.HasTraits]
@@ -163,17 +163,6 @@ class ViewFactoryContext:
 
 FilterType = Callable[
     [Type[traitlets.HasTraits], Tuple[str, ...], traitlets.TraitType], bool
-]
-
-
-TransformerType = Callable[
-    [
-        Type[traitlets.HasTraits],
-        traitlets.TraitType,
-        widgets.Widget,
-        ViewFactoryContext,
-    ],
-    Optional[widgets.Widget],
 ]
 
 
@@ -277,10 +266,7 @@ class ViewFactory:
             k: v for k, v in constructor_kwargs.items() if k in trait_names
         }
 
-        # Set widget disabled according to trait by default
-        kwargs = {"disabled": trait.read_only, **constructor_kwargs}
-
-        return cls(**kwargs)
+        return cls(**constructor_kwargs)
 
     def create_widgets_for_model_cls(
         self, model_cls: Type[traitlets.HasTraits], ctx: ViewFactoryContext
@@ -324,20 +310,18 @@ class ViewFactory:
         :return:
         """
         for name, trait in self.iter_traits(model_cls):
-            trait_ctx = ctx.follow_trait(name, trait.metadata)
+            # Create trait context with additional UI driven meta-data
+            trait_ctx = ctx.follow_trait(
+                name,
+                {
+                    "description": format_display_name(name),
+                    "disabled": trait.read_only,
+                    **trait.metadata,
+                },
+            )
 
             if not self.can_visit_trait(model_cls, trait, trait_ctx):
                 continue
-
-            # Inject description only if not set by trait tag or metadata
-            if trait_ctx.metadata.get("description") is None:
-                trait_ctx = dataclasses.replace(
-                    trait_ctx,
-                    metadata={
-                        **trait_ctx.metadata,
-                        "description": trait_ctx.display_name,
-                    },
-                )
 
             try:
                 widget = self.create_trait_view(trait, trait_ctx)

@@ -26,14 +26,15 @@ class ModelViewWidget(widgets.HBox):
         self.description_label = widgets.Label(value=kwargs.get("description", ""))
         widgets.link((self.description_label, "value"), (self, "description"))
 
-        # Create vbox for widgets
-        self.widgets_vbox = widgets.VBox()
-
         # Create widgets
         value_trait = self.traits()["value"]
         ctx = kwargs["ctx"]
         self.widgets = ctx.create_widgets_for_model_cls(ctx.resolve(value_trait.klass))
-        self.widgets_vbox.children = list(self.widgets.values())
+
+        # Create box container for widgets
+        self.widgets_container = widgets.GridBox(
+            list(self.widgets.values()), layout={"flex_flow": "column"}
+        )
         self._links = []
 
         self._logger = ctx.logger
@@ -47,7 +48,7 @@ class ModelViewWidget(widgets.HBox):
         super().__init__(
             children=[
                 self.description_label,
-                self.widgets_vbox,
+                self.widgets_container,
             ],
             **kwargs,
         )

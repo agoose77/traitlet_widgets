@@ -33,10 +33,12 @@ def unicode_view_factory(
     yield widgets.Combobox, ctx.metadata
     yield widgets.HTML, ctx.metadata
     yield widgets.HTMLMath, ctx.metadata
-    yield widgets.Label, ctx.metadata
     yield widgets.Password, ctx.metadata
     yield widgets.Textarea, ctx.metadata
     yield widgets.Text, ctx.metadata
+
+    if ctx.metadata['disabled']:
+        yield widgets.Label, ctx.metadata
 
 
 @trait_view_variants(traitlets.Enum)
@@ -58,7 +60,8 @@ def bool_view_factory(
 ) -> VariantIterator:
     yield widgets.ToggleButton, ctx.metadata
     yield widgets.Checkbox, {"indent": True, **ctx.metadata}
-    if trait.read_only:
+
+    if ctx.metadata['disabled']:
         yield widgets.Valid, ctx.metadata
 
 
