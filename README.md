@@ -1,5 +1,8 @@
-`traitlet_widgets`
-==================
+# Traitlet Widgets
+[![pypi-badge][]][pypi] 
+
+[pypi-badge]: https://img.shields.io/pypi/v/traitlet-widgets
+[pypi]: https://pypi.org/project/traitlet-widgets
 
 Examples
 --------
