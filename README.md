@@ -38,7 +38,7 @@ from traitlet_widgets import model_view
 
 class Model(HasTraits):
     age = Integer(min=0)
-    name = Unicode().tag(description="Model name")
+    name = Unicode().tag(description="A girl has no name")
 
 model = Model()
 
